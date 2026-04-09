@@ -4,6 +4,7 @@
 
 ## 目录内容
 
+- `蓝图.json`：蓝图 JSON 真源，供全局构建脚本编码成蓝图字符串
 - `蓝图.txt`：可直接导入 Factorio 的成品蓝图字符串
 - `README.md`：用途、接线、使用方式
 - `设计与维护.md`：实现思路、脚本入口、可调参数
@@ -50,17 +51,21 @@
 这样逻辑就是：
 
 - 某种熔融物低于 `2000` 时，才有资格被选中
-- 一旦被选中，就持续输出该信号
-- 直到该信号库存达到 `4000`，才释放并允许切到别的信号
+- 一旦被选中，通常会继续保持输出
+- 如果别的信号缺口明显更大，则可以提前抢占当前锁存
+- 如果当前信号一路补到 `4000`，则正常释放并允许切到别的信号
+- 如果另一个被监控的信号已经见底，则它可以直接抢占当前锁存
 
 ## 注意事项
 
-- 默认策略是“低阈值缺口最大的优先”
+- 默认策略是“低阈值缺口最大优先，当前锁存只有中等保持补偿，见底信号可强制抢占”
 - 多个候选缺口完全相同的话，最终会落到游戏内部的信号排序规则
+- 这个“中等保持补偿 + 见底抢占”主要用于处理依赖链场景，例如钢材生产持续消耗熔融铁时，铁的缺口会在见底前后逐步反超钢材
 - 右侧输出的是原始信号，不是自动转换后的配方信号
 
 ## 相关脚本
 
+- [蓝图.json](./蓝图.json)
 - [build_blueprint.py](../../.agents/skills/factorio-blueprints/scripts/build_blueprint.py)
 - [factorio_blueprint_builders.py](../../.agents/skills/factorio-blueprints/scripts/factorio_blueprint_builders.py)
 - [factorio_blueprint_codec.py](../../.agents/skills/factorio-blueprints/scripts/factorio_blueprint_codec.py)

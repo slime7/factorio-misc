@@ -1,14 +1,22 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
+import hashlib
+import importlib.util
 from pathlib import Path
-from typing import Any, Callable
+import sys
+from types import ModuleType
+from typing import Any, Callable, Iterable
 
-from factorio_blueprint_codec import encode_blueprint, write_text
+from factorio_blueprint_codec import encode_blueprint, load_json_document, strip_build_metadata, write_text
 
 
 BLUEPRINT_VERSION = 562949954076673
 BLUEPRINT_FILE_NAME = "蓝图.txt"
+PYTHON_BUILDER_DEFINITION_FILE_NAME = "builder.py"
+JSON_SOURCE_FILE_NAMES = ("蓝图.jsonc", "蓝图.json")
+BUILD_METADATA_KEY = "_build"
 
 
 def find_repo_root() -> Path:
@@ -82,262 +90,124 @@ def write_blueprint_file(payload: dict[str, Any], output_path: Path) -> Path:
     return output_path
 
 
-def build_recipe_signal_switch() -> dict[str, Any]:
-    always_true_condition = {
-        "first_signal": signal("signal-1", "virtual"),
-        "second_signal": signal("signal-1", "virtual"),
-        "comparator": "=",
-    }
+def _blueprint_directories() -> list[Path]:
+    return sorted(path for path in BLUEPRINTS_DIR.iterdir() if path.is_dir())
 
-    entities = [
-        entity(
-            1,
-            "display-panel",
-            0.5,
-            -1,
-            text="库存输入\n接当前库存信号",
-            icon=signal("red-wire"),
-            always_show=True,
-            show_in_chart=True,
-            control_behavior={
-                "messages": [
-                    {
-                        "text": "库存输入",
-                        "icon": signal("red-wire"),
-                        "condition": always_true_condition,
-                    }
-                ]
-            },
-        ),
-        entity(
-            2,
-            "constant-combinator",
-            0.5,
-            -3,
-            control_behavior={"sections": {"sections": [{"index": 1}]}},
-            player_description="低阈值。低于这个值才会启动该信号。",
-        ),
-        entity(
-            3,
-            "constant-combinator",
-            0.5,
-            -2,
-            control_behavior={"sections": {"sections": [{"index": 1}]}},
-            player_description="高阈值。锁存后会一直保持到库存达到这个值才释放。",
-        ),
-        entity(
-            4,
-            "arithmetic-combinator",
-            2.5,
-            -3,
-            direction=4,
-            control_behavior={
-                "arithmetic_conditions": {
-                    "first_signal": signal("signal-each", "virtual"),
-                    "second_signal": signal("signal-each", "virtual"),
-                    "operation": "-",
-                    "output_signal": signal("signal-each", "virtual"),
-                    "first_signal_networks": {"red": False, "green": True},
-                    "second_signal_networks": {"red": True, "green": False},
-                }
-            },
-            player_description="低阈值减当前库存，得到启动缺口。",
-        ),
-        entity(
-            5,
-            "decider-combinator",
-            4.5,
-            -3,
-            direction=4,
-            control_behavior={
-                "decider_conditions": {
-                    "conditions": [
-                        {
-                            "first_signal": signal("signal-each", "virtual"),
-                            "comparator": ">",
-                            "constant": 0,
-                            "first_signal_networks": {"red": True, "green": False},
-                        }
-                    ],
-                    "outputs": [
-                        {
-                            "signal": signal("signal-each", "virtual"),
-                            "networks": {"red": True, "green": False},
-                        }
-                    ],
-                }
-            },
-            player_description="只保留可启动的候选，并保留低阈值缺口大小。",
-        ),
-        entity(
-            6,
-            "arithmetic-combinator",
-            2.5,
-            -2,
-            direction=4,
-            control_behavior={
-                "arithmetic_conditions": {
-                    "first_signal": signal("signal-each", "virtual"),
-                    "second_signal": signal("signal-each", "virtual"),
-                    "operation": "-",
-                    "output_signal": signal("signal-each", "virtual"),
-                    "first_signal_networks": {"red": False, "green": True},
-                    "second_signal_networks": {"red": True, "green": False},
-                }
-            },
-            player_description="高阈值减当前库存。仍大于 0 说明还没到释放线。",
-        ),
-        entity(
-            7,
-            "decider-combinator",
-            4.5,
-            -2,
-            direction=4,
-            control_behavior={
-                "decider_conditions": {
-                    "conditions": [
-                        {
-                            "first_signal": signal("signal-each", "virtual"),
-                            "comparator": ">",
-                            "constant": 0,
-                            "first_signal_networks": {"red": True, "green": False},
-                        },
-                        {
-                            "first_signal": signal("signal-each", "virtual"),
-                            "comparator": ">",
-                            "constant": 0,
-                            "first_signal_networks": {"red": False, "green": True},
-                            "compare_type": "and",
-                        }
-                    ],
-                    "outputs": [
-                        {
-                            "signal": signal("signal-each", "virtual"),
-                            "constant": 1000000,
-                            "copy_count_from_input": False,
-                            "networks": {"red": False, "green": True},
-                        }
-                    ],
-                }
-            },
-            player_description="若当前锁存目标还没到高阈值，则给它一个很高的保持优先级，防止中途切换。",
-        ),
-        entity(
-            8,
-            "selector-combinator",
-            6.5,
-            -3,
-            direction=4,
-            control_behavior={"operation": "select", "select_max": True, "index_constant": 0},
-            player_description="从启动候选和保持优先级里只选一个最终目标。",
-        ),
-        entity(
-            9,
-            "decider-combinator",
-            8.5,
-            -3,
-            direction=4,
-            control_behavior={
-                "decider_conditions": {
-                    "conditions": [
-                        {
-                            "first_signal": signal("signal-each", "virtual"),
-                            "comparator": ">",
-                            "constant": 0,
-                            "first_signal_networks": {"red": True, "green": False},
-                        },
-                    ],
-                    "outputs": [
-                        {
-                            "signal": signal("signal-each", "virtual"),
-                            "constant": 1,
-                            "copy_count_from_input": False,
-                        }
-                    ],
-                }
-            },
-            player_description="把选中的目标归一化为固定输出 each = 1，并作为锁存记忆反馈。",
-        ),
-        entity(
-            10,
-            "display-panel",
-            12.5,
-            -3,
-            text="输出信号\n接后续转换或机器",
-            icon=signal("green-wire"),
-            always_show=True,
-            show_in_chart=True,
-            control_behavior={
-                "messages": [
-                    {
-                        "text": "输出信号",
-                        "icon": signal("green-wire"),
-                        "condition": always_true_condition,
-                    }
-                ]
-            },
-        ),
-    ]
 
-    wires = [
-        [1, 1, 4, 1],
-        [1, 1, 6, 1],
-        [2, 2, 4, 2],
-        [3, 2, 6, 2],
-        [4, 3, 5, 1],
-        [5, 3, 8, 1],
-        [6, 4, 7, 2],
-        [7, 4, 8, 2],
-        [8, 3, 9, 1],
-        [9, 3, 7, 1],
-        [9, 3, 10, 1],
-    ]
+def _python_builder_path(blueprint_dir: Path) -> Path:
+    return blueprint_dir / PYTHON_BUILDER_DEFINITION_FILE_NAME
 
-    description = "\n".join(
-        [
-            "用途：按库存信号自动选择一个输出信号，并用低阈值启动、高阈值释放的方式保持稳定。",
-            "接线：左侧显示器接当前库存信号，右侧显示器接后续转换逻辑或生产设备。",
-            "配置：左上常量组合器填低阈值，左下常量组合器填高阈值，信号名就是最终输出的信号名。",
-            "策略：只输出一个候选，默认选低阈值缺口最大的那个；锁存后直到高阈值满足才释放。",
-            "注意：该蓝图不做配方信号映射，只锁存并输出被选中的原始信号。",
-        ]
+
+def _json_source_paths(blueprint_dir: Path) -> list[Path]:
+    return [blueprint_dir / file_name for file_name in JSON_SOURCE_FILE_NAMES if (blueprint_dir / file_name).is_file()]
+
+
+def _load_builder_module(module_path: Path) -> ModuleType:
+    digest = hashlib.sha1(str(module_path.resolve()).encode("utf-8")).hexdigest()
+    module_name = f"_factorio_blueprint_builder_{digest}"
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"无法加载蓝图定义文件：{module_path}")
+
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _iter_module_builders(module: ModuleType, module_path: Path) -> Iterable[BlueprintBuilder]:
+    if not hasattr(module, "BUILDERS"):
+        raise AttributeError(f"{module_path} 缺少 BUILDERS 定义")
+
+    builders = getattr(module, "BUILDERS")
+    try:
+        items = list(builders)
+    except TypeError as error:
+        raise TypeError(f"{module_path} 的 BUILDERS 必须是可迭代对象") from error
+
+    for item in items:
+        if not isinstance(item, BlueprintBuilder):
+            raise TypeError(f"{module_path} 的 BUILDERS 只能包含 BlueprintBuilder")
+        yield item
+
+
+def _load_json_source(source_path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
+    document = load_json_document(source_path)
+    if not isinstance(document, dict):
+        raise TypeError(f"{source_path} 顶层必须是对象")
+
+    metadata = document.get(BUILD_METADATA_KEY)
+    if not isinstance(metadata, dict):
+        raise KeyError(f"{source_path} 缺少 {BUILD_METADATA_KEY} 对象")
+
+    payload = strip_build_metadata(document)
+    if not payload:
+        raise ValueError(f"{source_path} 缺少蓝图内容")
+    return metadata, payload
+
+
+def _json_source_builder(source_path: Path) -> BlueprintBuilder:
+    metadata, payload = _load_json_source(source_path)
+    name = metadata.get("name")
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError(f"{source_path} 的 {BUILD_METADATA_KEY}.name 必须是非空字符串")
+
+    summary = metadata.get("summary")
+    if not isinstance(summary, str) or not summary.strip():
+        blueprint = payload.get("blueprint")
+        label = blueprint.get("label") if isinstance(blueprint, dict) else None
+        summary = label if isinstance(label, str) and label.strip() else source_path.parent.name
+
+    def build_from_json_source() -> dict[str, Any]:
+        _, current_payload = _load_json_source(source_path)
+        return current_payload
+
+    return BlueprintBuilder(
+        name=name,
+        output=source_path.parent / BLUEPRINT_FILE_NAME,
+        summary=summary,
+        build=build_from_json_source,
     )
 
-    return {
-        "blueprint": {
-            "item": "blueprint",
-            "label": "配方信号阈值锁存开关",
-            "description": description,
-            "icons": [
-                {"signal": signal("display-panel"), "index": 1},
-                {"signal": signal("selector-combinator"), "index": 2},
-            ],
-            "entities": entities,
-            "wires": wires,
-            "version": BLUEPRINT_VERSION,
-        }
-    }
 
+@lru_cache(maxsize=1)
+def _builder_registry() -> dict[str, BlueprintBuilder]:
+    registry: dict[str, BlueprintBuilder] = {}
+    for blueprint_dir in _blueprint_directories():
+        module_path = _python_builder_path(blueprint_dir)
+        json_source_paths = _json_source_paths(blueprint_dir)
 
-BUILDERS = {
-    "recipe-signal-switch": BlueprintBuilder(
-        name="recipe-signal-switch",
-        output=BLUEPRINTS_DIR / "配方信号阈值锁存开关" / BLUEPRINT_FILE_NAME,
-        summary="库存驱动的单输出阈值锁存开关，低阈值启动，高阈值释放。",
-        build=build_recipe_signal_switch,
-    )
-}
+        if module_path.is_file() and json_source_paths:
+            raise ValueError(f"{blueprint_dir} 同时存在 builder.py 和 蓝图.json/jsonc，请保留一种来源")
+        if len(json_source_paths) > 1:
+            joined = ", ".join(path.name for path in json_source_paths)
+            raise ValueError(f"{blueprint_dir} 同时存在多个 JSON 来源：{joined}")
+
+        builders: Iterable[BlueprintBuilder] = []
+        if module_path.is_file():
+            module = _load_builder_module(module_path)
+            builders = _iter_module_builders(module, module_path)
+        elif json_source_paths:
+            builders = [_json_source_builder(json_source_paths[0])]
+
+        for builder in builders:
+            if builder.name in registry:
+                raise KeyError(f"重复的蓝图构建名：{builder.name}")
+            registry[builder.name] = builder
+    return registry
 
 
 def list_builders() -> list[BlueprintBuilder]:
-    return [BUILDERS[name] for name in sorted(BUILDERS)]
+    registry = _builder_registry()
+    return [registry[name] for name in sorted(registry)]
 
 
 def get_builder(name: str) -> BlueprintBuilder:
+    registry = _builder_registry()
     try:
-        return BUILDERS[name]
+        return registry[name]
     except KeyError as error:
-        known = ", ".join(sorted(BUILDERS))
+        known = ", ".join(sorted(registry))
         raise KeyError(f"未知蓝图构建名：{name}。可用项：{known}") from error
 
 

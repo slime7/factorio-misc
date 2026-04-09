@@ -43,7 +43,10 @@ description: 在本项目中创建、修改、解码、重建和排查 Factorio 
 
 修改逻辑时：
 
-- 改 `.agents/skills/factorio-blueprints/scripts/`
+- 通用构建、发现、编解码逻辑改 `.agents/skills/factorio-blueprints/scripts/`
+- 优先把具体蓝图真源放在 `blueprints/<蓝图名>/蓝图.json` 或 `blueprints/<蓝图名>/蓝图.jsonc`
+- 只有确实需要脚本生成时，才使用 `blueprints/<蓝图名>/builder.py`
+- 不要把具体蓝图逻辑继续塞回通用脚本
 - 不要在仓库其他位置复制同名脚本
 
 ## Commands
@@ -71,8 +74,10 @@ python .agents/skills/factorio-blueprints/scripts/factorio_blueprint_codec.py de
 新增或修改蓝图时，保持这些约定：
 
 - 成品蓝图放在 `blueprints/<蓝图名>/蓝图.txt`
+- 蓝图真源优先放在 `blueprints/<蓝图名>/蓝图.json` 或 `blueprints/<蓝图名>/蓝图.jsonc`
 - 使用说明放在 `blueprints/<蓝图名>/README.md`
 - 设计说明放在 `blueprints/<蓝图名>/设计与维护.md`
+- 只有需要脚本生成时，蓝图构建定义才放在 `blueprints/<蓝图名>/builder.py`
 - 外部资料结论放在 [factorio-wiki-notes.md](../../../docs/factorio-wiki-notes.md)
 
 如果新增了新的可复用蓝图流程：

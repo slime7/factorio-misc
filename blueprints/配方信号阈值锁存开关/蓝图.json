@@ -1,0 +1,487 @@
+{
+  "_build": {
+    "name": "recipe-signal-switch",
+    "summary": "库存驱动的单输出阈值锁存开关，低阈值启动，高阈值释放。"
+  },
+  "blueprint": {
+    "description": "用途：按库存信号单选一个输出，低阈值启动，高阈值释放。\n接线：左侧接库存信号，右侧接后级逻辑或机器。\n配置：上方常量组合器填低阈值，下方填高阈值，信号名即最终输出信号。\n策略：默认按低阈值缺口最大优先；当前锁存只有中等保持补偿；见底信号可强制抢占。\n注意：不做配方映射，只输出被选中的原始信号。",
+    "icons": [
+      {
+        "signal": {
+          "name": "display-panel"
+        },
+        "index": 1
+      },
+      {
+        "signal": {
+          "name": "selector-combinator"
+        },
+        "index": 2
+      }
+    ],
+    "entities": [
+      {
+        "entity_number": 1,
+        "name": "constant-combinator",
+        "position": {
+          "x": 333.5,
+          "y": -42.5
+        },
+        "control_behavior": {
+          "sections": {
+            "sections": [
+              {
+                "index": 1
+              }
+            ]
+          }
+        },
+        "player_description": "低阈值。低于这个值才会启动该信号。"
+      },
+      {
+        "entity_number": 2,
+        "name": "arithmetic-combinator",
+        "position": {
+          "x": 336,
+          "y": -42.5
+        },
+        "direction": 4,
+        "control_behavior": {
+          "arithmetic_conditions": {
+            "first_signal": {
+              "type": "virtual",
+              "name": "signal-each"
+            },
+            "second_signal": {
+              "type": "virtual",
+              "name": "signal-each"
+            },
+            "operation": "-",
+            "output_signal": {
+              "type": "virtual",
+              "name": "signal-each"
+            },
+            "first_signal_networks": {
+              "red": false,
+              "green": true
+            },
+            "second_signal_networks": {
+              "red": true,
+              "green": false
+            }
+          }
+        },
+        "player_description": "低阈值减当前库存，得到启动缺口。"
+      },
+      {
+        "entity_number": 3,
+        "name": "decider-combinator",
+        "position": {
+          "x": 338,
+          "y": -42.5
+        },
+        "direction": 4,
+        "control_behavior": {
+          "decider_conditions": {
+            "conditions": [
+              {
+                "first_signal": {
+                  "type": "virtual",
+                  "name": "signal-each"
+                },
+                "comparator": ">",
+                "first_signal_networks": {
+                  "red": true,
+                  "green": false
+                }
+              }
+            ],
+            "outputs": [
+              {
+                "signal": {
+                  "type": "virtual",
+                  "name": "signal-each"
+                },
+                "networks": {
+                  "red": true,
+                  "green": false
+                }
+              }
+            ]
+          }
+        },
+        "player_description": "只保留可启动的候选，并保留低阈值缺口大小。"
+      },
+      {
+        "entity_number": 4,
+        "name": "selector-combinator",
+        "position": {
+          "x": 341,
+          "y": -42.5
+        },
+        "direction": 4,
+        "control_behavior": {
+          "operation": "select",
+          "select_max": true,
+          "index_constant": 0
+        },
+        "player_description": "从启动候选、见底抢占和保持优先级里只选一个最终目标。"
+      },
+      {
+        "entity_number": 5,
+        "name": "decider-combinator",
+        "position": {
+          "x": 343,
+          "y": -42.5
+        },
+        "direction": 4,
+        "control_behavior": {
+          "decider_conditions": {
+            "conditions": [
+              {
+                "first_signal": {
+                  "type": "virtual",
+                  "name": "signal-each"
+                },
+                "comparator": ">",
+                "first_signal_networks": {
+                  "red": true,
+                  "green": false
+                }
+              }
+            ],
+            "outputs": [
+              {
+                "signal": {
+                  "type": "virtual",
+                  "name": "signal-each"
+                },
+                "copy_count_from_input": false
+              }
+            ]
+          }
+        },
+        "player_description": "把选中的目标归一化为固定输出 each = 1，并作为锁存记忆反馈。"
+      },
+      {
+        "entity_number": 6,
+        "name": "display-panel",
+        "position": {
+          "x": 346.5,
+          "y": -42.5
+        },
+        "direction": 8,
+        "control_behavior": {
+          "parameters": [
+            {
+              "condition": {
+                "first_signal": {
+                  "type": "virtual",
+                  "name": "signal-1"
+                },
+                "second_signal": {
+                  "type": "virtual",
+                  "name": "signal-1"
+                },
+                "comparator": "="
+              },
+              "icon": {
+                "name": "green-wire"
+              },
+              "text": "输出信号\n接后续转换或机器"
+            }
+          ]
+        },
+        "always_show": true,
+        "show_in_chart": true
+      },
+      {
+        "entity_number": 7,
+        "name": "display-panel",
+        "position": {
+          "x": 333.5,
+          "y": -40.5
+        },
+        "control_behavior": {
+          "parameters": [
+            {
+              "condition": {
+                "first_signal": {
+                  "type": "virtual",
+                  "name": "signal-1"
+                },
+                "second_signal": {
+                  "type": "virtual",
+                  "name": "signal-1"
+                },
+                "comparator": "="
+              },
+              "icon": {
+                "name": "red-wire"
+              },
+              "text": "库存输入\n接当前库存信号"
+            }
+          ]
+        },
+        "always_show": true,
+        "show_in_chart": true
+      },
+      {
+        "entity_number": 8,
+        "name": "constant-combinator",
+        "position": {
+          "x": 333.5,
+          "y": -41.5
+        },
+        "control_behavior": {
+          "sections": {
+            "sections": [
+              {
+                "index": 1
+              }
+            ]
+          }
+        },
+        "player_description": "低阈值。低于这个值才会启动该信号。"
+      },
+      {
+        "entity_number": 9,
+        "name": "arithmetic-combinator",
+        "position": {
+          "x": 336,
+          "y": -41.5
+        },
+        "direction": 4,
+        "control_behavior": {
+          "arithmetic_conditions": {
+            "first_signal": {
+              "type": "virtual",
+              "name": "signal-each"
+            },
+            "second_signal": {
+              "type": "virtual",
+              "name": "signal-each"
+            },
+            "operation": "-",
+            "output_signal": {
+              "type": "virtual",
+              "name": "signal-each"
+            },
+            "first_signal_networks": {
+              "red": false,
+              "green": true
+            },
+            "second_signal_networks": {
+              "red": true,
+              "green": false
+            }
+          }
+        },
+        "player_description": "高阈值减当前库存。仍大于 0 说明还没到释放线。"
+      },
+      {
+        "entity_number": 10,
+        "name": "decider-combinator",
+        "position": {
+          "x": 338,
+          "y": -41.5
+        },
+        "direction": 4,
+        "control_behavior": {
+          "decider_conditions": {
+            "conditions": [
+              {
+                "first_signal": {
+                  "type": "virtual",
+                  "name": "signal-each"
+                },
+                "comparator": ">",
+                "first_signal_networks": {
+                  "red": true,
+                  "green": false
+                }
+              },
+              {
+                "first_signal": {
+                  "type": "virtual",
+                  "name": "signal-each"
+                },
+                "comparator": ">",
+                "first_signal_networks": {
+                  "red": false,
+                  "green": true
+                },
+                "compare_type": "and"
+              }
+            ],
+            "outputs": [
+              {
+                "signal": {
+                  "type": "virtual",
+                  "name": "signal-each"
+                },
+                "copy_count_from_input": false,
+                "constant": 500,
+                "networks": {
+                  "red": false,
+                  "green": true
+                }
+              }
+            ]
+          }
+        },
+        "player_description": "若当前锁存目标还没到高阈值，则给它一个中等保持优先级，避免小幅波动立刻切换，但更大的缺口仍可抢占。"
+      },
+      {
+        "entity_number": 11,
+        "name": "decider-combinator",
+        "position": {
+          "x": 338,
+          "y": -40.5
+        },
+        "direction": 4,
+        "control_behavior": {
+          "decider_conditions": {
+            "conditions": [
+              {
+                "first_signal": {
+                  "type": "virtual",
+                  "name": "signal-each"
+                },
+                "second_signal": {
+                  "type": "virtual",
+                  "name": "signal-each"
+                },
+                "comparator": "≥",
+                "first_signal_networks": {
+                  "red": true,
+                  "green": false
+                },
+                "second_signal_networks": {
+                  "red": false,
+                  "green": true
+                }
+              },
+              {
+                "first_signal": {
+                  "type": "virtual",
+                  "name": "signal-each"
+                },
+                "comparator": ">",
+                "first_signal_networks": {
+                  "red": false,
+                  "green": true
+                },
+                "compare_type": "and"
+              }
+            ],
+            "outputs": [
+              {
+                "signal": {
+                  "type": "virtual",
+                  "name": "signal-each"
+                },
+                "copy_count_from_input": false,
+                "constant": 2000000,
+                "networks": {
+                  "red": true,
+                  "green": false
+                }
+              }
+            ]
+          }
+        },
+        "player_description": "若某个信号已经见底，则给它更高的抢占优先级，允许它打断当前锁存。"
+      }
+    ],
+    "wires": [
+      [
+        1,
+        2,
+        2,
+        2
+      ],
+      [
+        1,
+        2,
+        11,
+        2
+      ],
+      [
+        2,
+        1,
+        7,
+        1
+      ],
+      [
+        2,
+        3,
+        3,
+        1
+      ],
+      [
+        2,
+        3,
+        11,
+        1
+      ],
+      [
+        3,
+        3,
+        4,
+        1
+      ],
+      [
+        4,
+        1,
+        11,
+        3
+      ],
+      [
+        4,
+        2,
+        10,
+        4
+      ],
+      [
+        4,
+        3,
+        5,
+        1
+      ],
+      [
+        5,
+        3,
+        10,
+        1
+      ],
+      [
+        5,
+        4,
+        6,
+        2
+      ],
+      [
+        7,
+        1,
+        9,
+        1
+      ],
+      [
+        8,
+        2,
+        9,
+        2
+      ],
+      [
+        9,
+        4,
+        10,
+        2
+      ]
+    ],
+    "item": "blueprint",
+    "label": "配方信号阈值锁存开关",
+    "version": 562949958402048
+  }
+}

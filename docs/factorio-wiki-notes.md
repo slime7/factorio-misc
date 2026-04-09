@@ -12,7 +12,7 @@
 
 - `display-panel` 蓝图实体支持 `text`、`icon`、`always_show`、`show_in_chart`、`control_behavior`
 - `always_show` 可用于让显示内容长期显示，不必只靠手动开关细节模式
-- `control_behavior.messages` 可按条件显示图标和文字，适合给显示器做稳定的说明标签
+- 当前游戏导出的蓝图里，显示器说明写在 `control_behavior.parameters[]`，其中可直接放 `condition`、`icon` 和 `text`
 - 这次蓝图里把输入端和输出端都改成了 `display-panel`
 
 ### 常量组合器里的虚拟信号编码
@@ -37,7 +37,7 @@
 
 记录：
 
-- `display-panel` 的 `control_behavior.messages[].condition` 可以用 `signal-1 = signal-1` 作为恒真条件
+- `display-panel` 的说明条件可以用 `signal-1 = signal-1` 作为恒真条件
 - 这种写法不依赖额外常量组合器，也不会受接入电路网络里是否有信号影响
 - 当前蓝图已改成这种写法，并删掉了原先只为显示器说明服务的辅助常量组合器
 
@@ -75,6 +75,18 @@
 
 - 官方教程里提到组合器和电路设置的显示依赖 Alt-mode 相关选项
 - 这次改成显示器后，优先依赖 `always_show` 而不是只依赖 Alt-mode
+
+### 蓝图说明长度
+
+来源：
+
+- 实测
+
+记录：
+
+- 蓝图 JSON 里的 `description` 在导入游戏后，对中文文本会表现出接近 `500` 字节的截断现象
+- 当前这份蓝图的说明从 `586` 字节裁到 `500` 字节后，结果与游戏内看到的截断文本一致
+- 因此内置说明应只保留简短摘要，更完整的说明放到仓库里的 `README.md`
 
 ## 这份笔记的用途
 

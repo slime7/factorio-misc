@@ -26,6 +26,121 @@ def decode_blueprint(text: str) -> dict[str, Any]:
     return json.loads(content)
 
 
+def _strip_json_comments(text: str) -> str:
+    result: list[str] = []
+    in_string = False
+    escaped = False
+    in_line_comment = False
+    in_block_comment = False
+    index = 0
+
+    while index < len(text):
+        char = text[index]
+        next_char = text[index + 1] if index + 1 < len(text) else ""
+
+        if in_line_comment:
+            if char == "\n":
+                in_line_comment = False
+                result.append(char)
+            index += 1
+            continue
+
+        if in_block_comment:
+            if char == "*" and next_char == "/":
+                in_block_comment = False
+                index += 2
+                continue
+            index += 1
+            continue
+
+        if in_string:
+            result.append(char)
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            index += 1
+            continue
+
+        if char == "/" and next_char == "/":
+            in_line_comment = True
+            index += 2
+            continue
+
+        if char == "/" and next_char == "*":
+            in_block_comment = True
+            index += 2
+            continue
+
+        result.append(char)
+        if char == '"':
+            in_string = True
+        index += 1
+
+    return "".join(result)
+
+
+def _strip_trailing_commas(text: str) -> str:
+    result: list[str] = []
+    in_string = False
+    escaped = False
+    index = 0
+
+    while index < len(text):
+        char = text[index]
+
+        if in_string:
+            result.append(char)
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            index += 1
+            continue
+
+        if char == '"':
+            in_string = True
+            result.append(char)
+            index += 1
+            continue
+
+        if char == ",":
+            lookahead = index + 1
+            while lookahead < len(text) and text[lookahead] in " \t\r\n":
+                lookahead += 1
+            if lookahead < len(text) and text[lookahead] in "}]":
+                index += 1
+                continue
+
+        result.append(char)
+        index += 1
+
+    return "".join(result)
+
+
+def load_json_document(path: Path) -> Any:
+    content = path.read_text(encoding="utf-8-sig")
+    if path.suffix.lower() == ".jsonc":
+        content = _strip_json_comments(content)
+        content = _strip_trailing_commas(content)
+    return json.loads(content)
+
+
+def strip_build_metadata(payload: Any) -> Any:
+    if not isinstance(payload, dict):
+        return payload
+    if "_build" not in payload:
+        return payload
+
+    normalized = dict(payload)
+    normalized.pop("_build", None)
+    return normalized
+
+
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Factorio 蓝图字符串编解码工具")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -76,7 +191,7 @@ def main() -> None:
         return
 
     input_path = resolve_path(args.input)
-    payload = json.loads(input_path.read_text(encoding="utf-8"))
+    payload = strip_build_metadata(load_json_document(input_path))
     result = encode_blueprint(payload)
     if args.output:
         write_text(args.output, result + "\n")
